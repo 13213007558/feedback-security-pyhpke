@@ -10,6 +10,27 @@ class Mode(enum.Enum):
     AUTH_PSK = 3
 
 
+class ConcurrencyMode(enum.Enum):
+    """
+    The concurrency policy applied to a sender/recipient context.
+
+    - ``NONE``: No synchronization. This is the default and keeps the
+      historical behavior. A context must not be shared between threads.
+    - ``LOCKED``: A per-context lock serializes ``seal``/``open`` calls so
+      that nonce derivation, the AEAD operation and the sequence number
+      commit are executed atomically. Only this context is serialized;
+      unrelated contexts are never blocked.
+    - ``STRICT``: Like ``LOCKED``, but instead of waiting, a concurrent
+      call fails immediately with
+      :class:`pyhpke.ConcurrentUseError`. The state is left untouched so
+      the caller can retry later.
+    """
+
+    NONE = 0
+    LOCKED = 1
+    STRICT = 2
+
+
 class KEMId(enum.Enum):
     DHKEM_P256_HKDF_SHA256 = 0x0010
     DHKEM_P384_HKDF_SHA384 = 0x0011

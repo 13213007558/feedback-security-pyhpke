@@ -67,6 +67,7 @@ keypair = suite_s.kem.derive_key_pair(b"some_ikm_bytes_used_for_key_derivation")
 - [Supported HPKE Modes and Cipher Suites](#supported-hpke-modes-and-cipher-suites)
 - [Warnings and Restrictions](#warnings-and-restrictions)
 - [Usage](#usage)
+- [Thread Safety and State Commit](#thread-safety-and-state-commit)
 - [API Reference](#api-reference)
 - [Test](#test)
 - [Security](#security)
@@ -149,6 +150,44 @@ recipient = suite_r.create_recipient_context(enc, skr)
 pt = recipient.open(ct)
 
 assert pt == b"Hello world!"
+```
+
+## Thread Safety and State Commit
+
+A sender/recipient context keeps a sequence number which is XORed with the
+base nonce to derive the per-message nonce (RFC 9180, Section 5.2). PyHPKE
+commits the state transition exactly as the RFC defines it:
+
+- The sequence number is incremented **only after** the AEAD operation
+  succeeded. A failed `seal`/`open` (e.g. an authentication failure) never
+  consumes a sequence number, so the corresponding legitimate ciphertext can
+  be decrypted by simply calling `open` again.
+- When the sequence number reaches the RFC 9180 limit, `seal`/`open` raise
+  `MessageLimitReachedError` and the context state is left unchanged.
+- `export` never consumes a sequence number.
+
+By default (`ConcurrencyMode.NONE`) a context performs no synchronization and
+must not be shared between threads, which keeps the historical behavior. If a
+context is shared between threads (e.g. a worker pool), opt into one of the
+following policies via the `concurrency` argument of
+`create_sender_context`/`create_recipient_context`:
+
+- `ConcurrencyMode.LOCKED`: a **per-context** lock serializes
+  `seal`/`open` calls so that nonce derivation, the AEAD operation and the
+  sequence number commit are executed atomically. Unrelated contexts are
+  never blocked by each other.
+- `ConcurrencyMode.STRICT`: like `LOCKED`, but a concurrent call fails
+  immediately with `ConcurrentUseError` instead of waiting. The state is
+  left untouched and the call can be retried later.
+
+Note that on the recipient side these policies only make each `open` call
+atomic; they do not reorder messages. Ciphertexts must still be passed to
+`open` in the order the sender produced them (e.g. via an ordered queue),
+because each `open` consumes the next sequence number in arrival order.
+
+```py
+enc, sender = suite_s.create_sender_context(pkr, concurrency=ConcurrencyMode.LOCKED)
+recipient = suite_r.create_recipient_context(enc, skr, concurrency=ConcurrencyMode.LOCKED)
 ```
 
 ## API Reference

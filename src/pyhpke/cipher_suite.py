@@ -2,7 +2,7 @@ import struct
 
 from .aead import AEAD, AEADParams
 from .aead_interface import AEADInterface
-from .consts import AEADId, KDFId, KEMId, Mode
+from .consts import AEADId, ConcurrencyMode, KDFId, KEMId, Mode
 from .context_interface import ContextInterface
 from .exporter_context import ExporterContext
 from .kdf import KDF
@@ -73,14 +73,21 @@ class CipherSuite:
         psk: bytes = b"",
         psk_id: bytes = b"",
         eks: KEMKeyPair | None = None,
+        concurrency: ConcurrencyMode = ConcurrencyMode.NONE,
     ) -> tuple[bytes, ContextInterface]:
         """
         Creates a sender context.
+
+        Args:
+            concurrency (ConcurrencyMode): The concurrency policy applied to
+                the returned context. Defaults to ``ConcurrencyMode.NONE``
+                (no synchronization; the context must not be shared between
+                threads). See :class:`pyhpke.ConcurrencyMode` for details.
         """
         mode: Mode = (Mode.BASE if sks is None else Mode.AUTH) if psk == b"" else (Mode.PSK if sks is None else Mode.AUTH_PSK)
 
         shared_secret, enc = self._kem.encap(pkr, sks, eks)
-        return enc, self._key_schedule_s(mode, shared_secret, info, psk, psk_id)
+        return enc, self._key_schedule_s(mode, shared_secret, info, psk, psk_id, concurrency)
 
     def create_recipient_context(
         self,
@@ -90,14 +97,21 @@ class CipherSuite:
         pks: KEMKeyInterface | None = None,
         psk: bytes = b"",
         psk_id: bytes = b"",
+        concurrency: ConcurrencyMode = ConcurrencyMode.NONE,
     ) -> ContextInterface:
         """
         Creates a recipient context.
+
+        Args:
+            concurrency (ConcurrencyMode): The concurrency policy applied to
+                the returned context. Defaults to ``ConcurrencyMode.NONE``
+                (no synchronization; the context must not be shared between
+                threads). See :class:`pyhpke.ConcurrencyMode` for details.
         """
         mode: Mode = (Mode.BASE if pks is None else Mode.AUTH) if psk == b"" else (Mode.PSK if pks is None else Mode.AUTH_PSK)
 
         shared_secret = self._kem.decap(enc, skr, pks)
-        return self._key_schedule_r(mode, shared_secret, info, psk, psk_id)
+        return self._key_schedule_r(mode, shared_secret, info, psk, psk_id, concurrency)
 
     def seal(
         self,
@@ -159,11 +173,12 @@ class CipherSuite:
         info: bytes,
         psk: bytes,
         psk_id: bytes,
+        concurrency: ConcurrencyMode = ConcurrencyMode.NONE,
     ) -> ContextInterface:
         kdf, params = self._key_schedule(mode, shared_secret, info, psk, psk_id)
         if params.key == b"":
             return ExporterContext(kdf, params.exporter_secret)
-        return SenderContext(kdf, params)
+        return SenderContext(kdf, params, concurrency)
 
     def _key_schedule_r(
         self,
@@ -172,8 +187,9 @@ class CipherSuite:
         info: bytes,
         psk: bytes,
         psk_id: bytes,
+        concurrency: ConcurrencyMode = ConcurrencyMode.NONE,
     ) -> ContextInterface:
         kdf, params = self._key_schedule(mode, shared_secret, info, psk, psk_id)
         if params.key == b"":
             return ExporterContext(kdf, params.exporter_secret)
-        return RecipientContext(kdf, params)
+        return RecipientContext(kdf, params, concurrency)

@@ -1,9 +1,16 @@
 from .aead_interface import AEADInterface
 from .aead_key_interface import AEADKeyInterface
 from .cipher_suite import CipherSuite
-from .consts import AEADId, KDFId, KEMId
+from .consts import AEADId, ConcurrencyMode, KDFId, KEMId
 from .context_interface import ContextInterface
-from .exceptions import NotSupportedError, OpenError, PyHPKEError, SealError
+from .exceptions import (
+    ConcurrentUseError,
+    MessageLimitReachedError,
+    NotSupportedError,
+    OpenError,
+    PyHPKEError,
+    SealError,
+)
 from .kdf_interface import KDFInterface
 from .kem_interface import KEMInterface
 from .kem_key import KEMKey, KEMKeyPair
@@ -24,9 +31,12 @@ __all__ = [
     "AEADKeyInterface",
     "CipherSuite",
     "AEADId",
+    "ConcurrencyMode",
     "KDFId",
     "KEMId",
     "ContextInterface",
+    "ConcurrentUseError",
+    "MessageLimitReachedError",
     "NotSupportedError",
     "OpenError",
     "PyHPKEError",

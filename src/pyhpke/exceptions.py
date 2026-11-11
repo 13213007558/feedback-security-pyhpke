@@ -28,3 +28,23 @@ class OpenError(PyHPKEError):
     """
 
     pass
+
+
+class MessageLimitReachedError(PyHPKEError):
+    """
+    An Exception occurred when the sequence number of a context reached
+    the limit defined in RFC 9180 and no further messages can be
+    encrypted or decrypted with it. The context state is left unchanged.
+    """
+
+    pass
+
+
+class ConcurrentUseError(PyHPKEError):
+    """
+    An Exception occurred when a context configured with
+    ``ConcurrencyMode.STRICT`` is used concurrently. The context state
+    is left unchanged and the operation can be retried later.
+    """
+
+    pass

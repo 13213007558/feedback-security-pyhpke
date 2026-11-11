@@ -4,6 +4,10 @@ Changes
 Unreleased
 ----------
 
+- Commit the context sequence number only after a successful AEAD operation, per RFC 9180 Section 5.2, so failed ``seal``/``open`` calls no longer consume a sequence number.
+- Add ``MessageLimitReachedError`` raised when the sequence number reaches the RFC 9180 limit, leaving the context state unchanged.
+- Add optional per-context concurrency protection via the ``concurrency`` argument of ``create_sender_context``/``create_recipient_context``: ``ConcurrencyMode.LOCKED`` serializes calls with a per-context lock, ``ConcurrencyMode.STRICT`` rejects concurrent calls with ``ConcurrentUseError``. The default ``ConcurrencyMode.NONE`` keeps the historical behavior.
+
 Version 0.6.5
 -------------
 
