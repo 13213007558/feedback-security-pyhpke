@@ -14,6 +14,15 @@ class NotSupportedError(PyHPKEError):
     pass
 
 
+class InvalidModeError(PyHPKEError):
+    """
+    An Exception occurred when the explicitly selected HPKE mode does not match
+    the supplied parameters (PSK/PSK id pairing or static authentication keys).
+    """
+
+    pass
+
+
 class SealError(PyHPKEError):
     """
     An Exception occurred when an encryption process failed.

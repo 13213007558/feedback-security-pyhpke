@@ -67,6 +67,7 @@ keypair = suite_s.kem.derive_key_pair(b"some_ikm_bytes_used_for_key_derivation")
 - [Supported HPKE Modes and Cipher Suites](#supported-hpke-modes-and-cipher-suites)
 - [Warnings and Restrictions](#warnings-and-restrictions)
 - [Usage](#usage)
+- [Explicit Mode Selection](#explicit-mode-selection)
 - [API Reference](#api-reference)
 - [Test](#test)
 - [Security](#security)
@@ -150,6 +151,55 @@ pt = recipient.open(ct)
 
 assert pt == b"Hello world!"
 ```
+
+## Explicit Mode Selection
+
+`create_sender_context()` and `create_recipient_context()` keep their original
+calling convention for backwards compatibility, but they **infer** the HPKE
+mode from the supplied parameters. If a configuration entry is missing (for
+example `psk_id` is omitted while `psk` is set), the mode is silently
+re-derived instead of failing — an AuthPSK deployment can therefore be reduced
+to PSK or Base without any error.
+
+For new code, use the strict entries `create_sender_context_strict()` and
+`create_recipient_context_strict()`, which take an explicit `Mode` and reject
+any parameter that does not match it with an `InvalidModeError` **before** the
+KEM is executed or any ephemeral key material is generated:
+
+```py
+from pyhpke import AEADId, CipherSuite, InvalidModeError, KDFId, KEMId, Mode
+
+suite = CipherSuite.new(
+    KEMId.DHKEM_P256_HKDF_SHA256, KDFId.HKDF_SHA256, AEADId.AES128_GCM
+)
+
+# Bind the context to a mode instead of letting it be inferred.
+enc, sender = suite.create_sender_context_strict(
+    Mode.AUTH_PSK, pkr, info, sks, psk, psk_id
+)
+recipient = suite.create_recipient_context_strict(
+    Mode.AUTH_PSK, enc, skr, info, pks, psk, psk_id
+)
+
+# A missing psk_id now fails immediately instead of downgrading to Auth mode.
+try:
+    suite.create_sender_context_strict(Mode.AUTH_PSK, pkr, info, sks, psk, b"")
+except InvalidModeError as e:
+    print(e)  # psk and psk_id must be both provided or both omitted.
+```
+
+The strict entries validate, for each of the four modes (`BASE`, `PSK`,
+`AUTH`, `AUTH_PSK`):
+
+- `psk` and `psk_id` must be provided together in the PSK modes and omitted
+  together in the non-PSK modes;
+- the static authentication key (`sks` on the sender, `pks` on the recipient)
+  is required in the Auth/AuthPSK modes and forbidden in Base/PSK;
+- the key roles are correct: public `pkr`/`pks`, private `skr`/`sks`.
+
+The legacy `create_sender_context()`/`create_recipient_context()` remain
+available unchanged; only use them when the inferred-mode behavior is
+acceptable. Prefer the strict entries for security-sensitive configurations.
 
 ## API Reference
 

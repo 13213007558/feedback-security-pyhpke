@@ -4,6 +4,14 @@ Changes
 Unreleased
 ----------
 
+- Add strict, mode-bound sender/recipient entry points
+  (``create_sender_context_strict``/``create_recipient_context_strict``) that
+  take an explicit ``Mode`` and raise ``InvalidModeError`` on mismatched
+  PSK/PSK-id pairing, static authentication key presence, or key roles before
+  the KEM runs. The legacy inferring entry points are retained unchanged.
+- Export ``Mode`` and ``InvalidModeError`` from the package, and add
+  ``KEMKeyInterface.is_public`` for key-role checks.
+
 Version 0.6.5
 -------------
 

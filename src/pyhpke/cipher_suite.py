@@ -4,6 +4,7 @@ from .aead import AEAD, AEADParams
 from .aead_interface import AEADInterface
 from .consts import AEADId, KDFId, KEMId, Mode
 from .context_interface import ContextInterface
+from .exceptions import InvalidModeError
 from .exporter_context import ExporterContext
 from .kdf import KDF
 from .kdf_interface import KDFInterface
@@ -76,8 +77,68 @@ class CipherSuite:
     ) -> tuple[bytes, ContextInterface]:
         """
         Creates a sender context.
+
+        .. note::
+            **Legacy entry point.**
+
+            The HPKE mode is inferred from the supplied parameters. A missing
+            parameter (e.g. an omitted ``psk_id``) therefore silently selects a
+            different mode instead of failing. New code should use
+            :meth:`create_sender_context_strict`, which binds the context to an
+            explicitly selected :class:`Mode <pyhpke.Mode>` and rejects any
+            parameter that does not match it.
         """
         mode: Mode = (Mode.BASE if sks is None else Mode.AUTH) if psk == b"" else (Mode.PSK if sks is None else Mode.AUTH_PSK)
+
+        shared_secret, enc = self._kem.encap(pkr, sks, eks)
+        return enc, self._key_schedule_s(mode, shared_secret, info, psk, psk_id)
+
+    def create_sender_context_strict(
+        self,
+        mode: Mode,
+        pkr: KEMKeyInterface,
+        info: bytes = b"",
+        sks: KEMKeyInterface | None = None,
+        psk: bytes = b"",
+        psk_id: bytes = b"",
+        eks: KEMKeyPair | None = None,
+    ) -> tuple[bytes, ContextInterface]:
+        """
+        Creates a sender context bound to an explicitly selected mode.
+
+        Unlike :meth:`create_sender_context`, the mode is never inferred: every
+        parameter is checked against ``mode`` and an
+        :class:`InvalidModeError <pyhpke.InvalidModeError>` is raised before the
+        KEM is executed or any ephemeral key material is generated when:
+
+        * ``mode`` is not a :class:`Mode <pyhpke.Mode>`,
+        * exactly one of ``psk``/``psk_id`` is provided (they must be both set
+          in the PSK modes and both empty in the non-PSK modes),
+        * ``sks`` (the sender's static private key) is present for a non-auth
+          mode or missing for an auth mode,
+        * ``pkr`` is not a public key or ``sks`` is not a private key.
+
+        Args:
+            mode (Mode): The HPKE mode to bind the context to.
+            pkr (KEMKeyInterface): The recipient's static public key.
+            info (bytes): A byte string of additional contextual information.
+            sks (KEMKeyInterface | None): The sender's static private key,
+                required for the Auth and AuthPSK modes.
+            psk (bytes): The pre-shared key, required for the PSK and AuthPSK
+                modes.
+            psk_id (bytes): The pre-shared key identifier, required together
+                with ``psk`` for the PSK and AuthPSK modes.
+            eks (KEMKeyPair | None): An optional ephemeral key pair, mainly used
+                with test vectors.
+        Returns:
+            tuple[bytes, ContextInterface]: A tuple of the encapsulated key
+            (``enc``) and the sender context.
+        """
+        self._validate_mode(mode, psk, psk_id, sks is not None)
+        if pkr.is_public is False:
+            raise InvalidModeError("pkr must be a public key.")
+        if sks is not None and sks.is_public:
+            raise InvalidModeError("sks must be a private key.")
 
         shared_secret, enc = self._kem.encap(pkr, sks, eks)
         return enc, self._key_schedule_s(mode, shared_secret, info, psk, psk_id)
@@ -93,11 +154,87 @@ class CipherSuite:
     ) -> ContextInterface:
         """
         Creates a recipient context.
+
+        .. note::
+            **Legacy entry point.**
+
+            The HPKE mode is inferred from the supplied parameters. A missing
+            parameter (e.g. an omitted ``psk_id``) therefore silently selects a
+            different mode instead of failing. New code should use
+            :meth:`create_recipient_context_strict`, which binds the context to
+            an explicitly selected :class:`Mode <pyhpke.Mode>` and rejects any
+            parameter that does not match it.
         """
         mode: Mode = (Mode.BASE if pks is None else Mode.AUTH) if psk == b"" else (Mode.PSK if pks is None else Mode.AUTH_PSK)
 
         shared_secret = self._kem.decap(enc, skr, pks)
         return self._key_schedule_r(mode, shared_secret, info, psk, psk_id)
+
+    def create_recipient_context_strict(
+        self,
+        mode: Mode,
+        enc: bytes,
+        skr: KEMKeyInterface,
+        info: bytes = b"",
+        pks: KEMKeyInterface | None = None,
+        psk: bytes = b"",
+        psk_id: bytes = b"",
+    ) -> ContextInterface:
+        """
+        Creates a recipient context bound to an explicitly selected mode.
+
+        Unlike :meth:`create_recipient_context`, the mode is never inferred:
+        every parameter is checked against ``mode`` and an
+        :class:`InvalidModeError <pyhpke.InvalidModeError>` is raised before the
+        KEM is executed when:
+
+        * ``mode`` is not a :class:`Mode <pyhpke.Mode>`,
+        * exactly one of ``psk``/``psk_id`` is provided (they must be both set
+          in the PSK modes and both empty in the non-PSK modes),
+        * ``pks`` (the sender's static public key) is present for a non-auth
+          mode or missing for an auth mode,
+        * ``skr`` is not a private key or ``pks`` is not a public key.
+
+        Args:
+            mode (Mode): The HPKE mode to bind the context to.
+            enc (bytes): The encapsulated key produced by the sender.
+            skr (KEMKeyInterface): The recipient's static private key.
+            info (bytes): A byte string of additional contextual information.
+            pks (KEMKeyInterface | None): The sender's static public key,
+                required for the Auth and AuthPSK modes.
+            psk (bytes): The pre-shared key, required for the PSK and AuthPSK
+                modes.
+            psk_id (bytes): The pre-shared key identifier, required together
+                with ``psk`` for the PSK and AuthPSK modes.
+        Returns:
+            ContextInterface: The recipient context.
+        """
+        self._validate_mode(mode, psk, psk_id, pks is not None)
+        if skr.is_public:
+            raise InvalidModeError("skr must be a private key.")
+        if pks is not None and pks.is_public is False:
+            raise InvalidModeError("pks must be a public key.")
+
+        shared_secret = self._kem.decap(enc, skr, pks)
+        return self._key_schedule_r(mode, shared_secret, info, psk, psk_id)
+
+    @staticmethod
+    def _validate_mode(mode: Mode, psk: bytes, psk_id: bytes, uses_auth_key: bool) -> None:
+        if not isinstance(mode, Mode):
+            raise InvalidModeError("mode must be a Mode.")
+        if (psk == b"") != (psk_id == b""):
+            raise InvalidModeError("psk and psk_id must be both provided or both omitted.")
+        if mode in (Mode.PSK, Mode.AUTH_PSK):
+            if psk == b"":
+                raise InvalidModeError(f"psk and psk_id are required for the {mode.name} mode.")
+        elif psk != b"":
+            raise InvalidModeError(f"psk and psk_id are not allowed for the {mode.name} mode.")
+        if mode in (Mode.AUTH, Mode.AUTH_PSK):
+            if not uses_auth_key:
+                raise InvalidModeError(f"A static authentication key is required for the {mode.name} mode.")
+        elif uses_auth_key:
+            raise InvalidModeError(f"A static authentication key is not allowed for the {mode.name} mode.")
+        return
 
     def seal(
         self,

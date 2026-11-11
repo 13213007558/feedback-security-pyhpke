@@ -32,6 +32,34 @@ And then, you can use it as follows:
 
 You can find other samples in `PyHPKE README`_.
 
+Explicit Mode Selection
+-----------------------
+
+``create_sender_context()`` and ``create_recipient_context()`` infer the HPKE
+mode from the supplied parameters, so a missing configuration entry (e.g. an
+omitted ``psk_id``) silently selects a different mode instead of failing.
+
+New code should use the strict entry points
+:meth:`CipherSuite.create_sender_context_strict` and
+:meth:`CipherSuite.create_recipient_context_strict`, which bind the context to
+an explicit :class:`~pyhpke.Mode` and raise
+:class:`~pyhpke.InvalidModeError` before the KEM runs whenever the PSK/PSK-id
+pairing, the presence of a static authentication key, or a key role does not
+match the selected mode.
+
+.. code-block:: pycon
+
+    >>> from pyhpke import Mode
+    >>> enc, sender = suite.create_sender_context_strict(
+    ...     Mode.AUTH_PSK, pkr, info, sks, psk, psk_id
+    ... )
+    >>> recipient = suite.create_recipient_context_strict(
+    ...     Mode.AUTH_PSK, enc, skr, info, pks, psk, psk_id
+    ... )
+
+The legacy inferring entry points remain supported for backwards
+compatibility; see :class:`CipherSuite <pyhpke.CipherSuite>` for the full API.
+
 Index
 -----
 
